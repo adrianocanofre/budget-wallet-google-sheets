@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -29,8 +30,25 @@ func main() {
 	logInfo("sheets url : %s", cfg.SheetsURL)
 
 	switch os.Args[1] {
+
 	case "fetch":
-		fetchAllMonths(cfg)
+		month := 1
+		printOnly := false
+
+		for _, arg := range os.Args[2:] {
+			switch arg {
+			case "--print":
+				printOnly = true
+			default:
+				m, err := strconv.Atoi(arg)
+				if err != nil || m < 1 || m > 12 {
+					log.Fatalf("invalid argument: %s", arg)
+				}
+				month = m
+			}
+		}
+
+		fetchAllMonths(cfg, month, printOnly)
 	case "send":
 		sendAllMonths(cfg)
 	default:

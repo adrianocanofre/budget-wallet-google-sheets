@@ -9,9 +9,12 @@ import (
 	"time"
 )
 
-// ── Fetch ────────────────────────────────────────────────────────────────────
+func fetchAllMonths(cfg Config, month_start int, printOnly bool) {
 
-func fetchAllMonths(cfg Config) {
+	monthFinish := int(time.Now().Month())
+	if month_start >= 1 {
+		monthFinish = month_start
+	}
 	labels, err := loadLabels()
 	if err != nil {
 		log.Fatalf("[ERROR] %v", err)
@@ -19,18 +22,20 @@ func fetchAllMonths(cfg Config) {
 
 	logInfo("loaded %d labels from %s", len(labels), labelsFile)
 
-	for month := 1; month <= 12; month++ {
+	for month := month_start; month <= monthFinish; month++ {
 
 		dateFrom, dateTo := monthRange(year, month)
 		outputFile := fmt.Sprintf("%s/record_%d_%02d.json", cfg.OutputDir, year, month)
 
 		logSection("month %02d  %s → %s", month, dateFrom, dateTo)
-
+		logInfo("month:  %02d", month)
 		totals := make(map[string]float64)
 		totalOk := 0
 		totalSkip := 0
 
 		for name, id := range labels {
+			logSection("Label:  %s,  ID: %s", name, id)
+			logInfo("label: %s", name)
 			records, err := fetchRecordsByLabel(cfg.Token, dateFrom, dateTo, id)
 			if err != nil {
 				logWarn("label %s error: %v", "'"+name+"'", err)
@@ -44,9 +49,12 @@ func fetchAllMonths(cfg Config) {
 			} else {
 				totals[name] = 0
 				totalSkip++
+				logInfo("%s=%s", name, formatEuro(0.00))
 				logSkip("%s no records", name)
 			}
 			time.Sleep(300 * time.Millisecond)
+
+			logSection("Label:  %s, value: %f", name, sum)
 		}
 
 		if len(totals) == 0 {
@@ -60,9 +68,21 @@ func fetchAllMonths(cfg Config) {
 			Data:  formatTotals(totals),
 		}
 
-		if err := savePayload(payload, outputFile); err != nil {
-			logError("failed to save file: %v", err)
-			continue
+		if printOnly {
+			b, err := json.MarshalIndent(payload, "", "  ")
+			if err != nil {
+				logError("failed to marshal payload: %v", err)
+				continue
+			}
+
+			fmt.Println(string(b))
+		} else {
+			if err := savePayload(payload, outputFile); err != nil {
+				logError("failed to save file: %v", err)
+				continue
+			}
+
+			logInfo("saved → %s", outputFile)
 		}
 
 		logInfo("total Label → %d", totalOk)
@@ -78,6 +98,7 @@ func fetchRecordsByLabel(token, dateFrom, dateTo, labelID string) ([]Record, err
 	offset := 0
 
 	for {
+
 		url := fmt.Sprintf(
 			"%s?recordDate=gte.%s%%2Clt.%s&labelId=%s&limit=%d&offset=%d&agentHints=false",
 			baseURL, dateFrom, dateTo, labelID, pageSize, offset,
@@ -102,9 +123,25 @@ func fetchRecordsByLabel(token, dateFrom, dateTo, labelID string) ([]Record, err
 			return nil, err
 		}
 
+		logInfo("Status: %d", res.StatusCode)
+		logInfo("Content-Type: %s", res.Header.Get("Content-Type"))
+		logInfo("Response Body:\n%s", string(body))
+
+		if res.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf(
+				"API returned %d\nBody: %s",
+				res.StatusCode,
+				string(body),
+			)
+		}
+
 		var apiResp APIResponse
 		if err := json.Unmarshal(body, &apiResp); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, fmt.Errorf(
+				"failed to parse response: %w\nBody: %s",
+				err,
+				string(body),
+			)
 		}
 
 		allRecords = append(allRecords, apiResp.Records...)

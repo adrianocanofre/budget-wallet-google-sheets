@@ -65,11 +65,7 @@ func logSkip(format string, args ...any) {
 }
 
 func logInfo(format string, args ...any) {
-	if debug == "debug" {
-		logJSON("INFO", format, args...)
-	} else {
-		return
-	}
+	logJSON("INFO", format, args...)
 }
 
 func logJSON(level string, format string, args ...any) {
